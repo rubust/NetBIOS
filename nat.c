@@ -18,6 +18,45 @@
 #include <netpacket/packet.h>
 #include <sys/ioctl.h>
 
+in_addr_t get_interface_addr4(const char *ifname)
+{
+	int sockfd;
+	struct ifreq ifr;
+	in_addr_t ipv4_addr = INADDR_ANY;
+
+	if ((sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0)
+		return INADDR_ANY;
+
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+	/* Get IPv4 address */
+	if (ioctl(sockfd, SIOCGIFADDR, &ifr) == 0) {
+		struct sockaddr_in *ipv4_inaddr = (struct sockaddr_in *)&ifr.ifr_addr;
+		if (ipv4_inaddr->sin_addr.s_addr != INADDR_ANY &&
+		    ipv4_inaddr->sin_addr.s_addr != INADDR_NONE)
+			ipv4_addr = ipv4_inaddr->sin_addr.s_addr;
+	}
+
+	close(sockfd);
+
+	return ipv4_addr;
+}
+
+int put_br0_addr(char *data)
+{
+	in_addr_t addr;
+	addr = get_interface_addr4("br0");
+
+	//printf("0x%x, 0x%x\n", addr, ntohl(addr));
+
+    data[2] = (ntohl(addr)>>24)&0xff;
+    data[3] = (ntohl(addr)>>16)&0xff;
+    data[4] = (ntohl(addr)>>8)&0xff;
+    data[5] = (ntohl(addr))&0xff;
+	
+	return 0 ;
+}
 
 static int put_nmb_name(char *buf,int offset,struct nmb_name *name)
 {
@@ -153,6 +192,8 @@ static BOOL send_udp(int fd,char *buf,int len,struct in_addr ip,int port)
 
     if (!ret)
         printf("Packet send failed to %s(%d) ERRNO=%s\n", inet_ntoa(ip), port, strerror(errno));
+	else
+		printf("Packet send success!\n");
 
     if (ret)
         num_good_sends++;
@@ -169,12 +210,18 @@ BOOL send_packet(struct packet_struct *p)
 
     len = build_nmb(buf,p);
 
-    if (!len) return(False);
+    if (!len) 
+	{
+		printf("build_nmb error\n");
+		return(False);
+    }
+	
     for (i=0; i<len; i++) {
         if( (i % 32) == 0)
             printf("\n");
         printf("0x%02x ",(unsigned char)buf[i]);
     }
+	printf("\n");
 
     return (send_udp(p->fd,buf,len,p->ip,p->port));
 }
@@ -482,10 +529,15 @@ void reply_netbios_packet(struct packet_struct *orig_packet, int rcode, int opco
     {
         char data[6];
         memset(data, 0, sizeof(data));
+	#if 0 //192.168.1.4
         data[2] = 0xc0;
         data[3] = 0xa8;
         data[4] = 0x01;
         data[5] = 0x22;
+	#else
+		put_br0_addr(data);
+	#endif
+		
         memcpy(nmb->answers->rdata, data, 6);
     }
 
@@ -509,7 +561,7 @@ int main(void)
     int numbytes;
     char buf[MAX_DGRAM_SIZE];
     struct packet_struct *packet;
-    char *nam_names = "DANIEL_TEST";
+    char *nam_names = "frankie_test";
 
     //struct hostent *hp;
 
@@ -579,7 +631,7 @@ int main(void)
             continue;
 
         printf("name = %s\n", packet->packet.nmb.question.question_name.name);
-        if ((ret = strncmp(nam_names, packet->packet.nmb.question.question_name.name, strlen(nam_names))) != 0) {
+        if ((ret = strncasecmp(nam_names, packet->packet.nmb.question.question_name.name, strlen(nam_names))) != 0) {
             free_packet(packet);
             continue;
         }
