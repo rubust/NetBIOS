@@ -203,7 +203,7 @@ struct net_interface {
 
 #define RSVAL(buf,pos) SREV(SVAL(buf,pos))
 #define RIVAL(buf,pos) IREV(IVAL(buf,pos))
-#define RSSVAL(buf,posal) SSVAL(buf,pos,SREV(val))
+#define RSSVAL(buf,pos,val) SSVAL(buf,pos,SREV(val))
 #define RSIVAL(buf,pos,val) SIVAL(buf,pos,IREV(val))
 
 #define SAFE_FREE(x) do { if ((x) != NULL) {free(x); x=NULL;} } while(0)
